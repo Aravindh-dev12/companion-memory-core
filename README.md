@@ -1,299 +1,326 @@
 # Companion Memory Core
 
-A research prototype for **persistent, temporally correct memory and persona consistency in AI companions**.
+A small, inspectable prototype for **persistent, temporally correct memory and persona consistency in AI companions**.
 
-> **Research thesis:** long-term companion memory is a **state-management problem with retrieval**, not a vector-search problem with a prompt.
+> **Thesis:** long-term companion memory is a **state-management problem with retrieval**, not a vector-search problem with a prompt.
 
-The project is intentionally small and inspectable. There is no UI, auth layer, billing, multimodal stack, or production-scale infrastructure. The system is designed to make the memory loop auditable: what was extracted, why state changed, what was retrieved, and whether the final response contradicted memory or persona.
+The implementation intentionally stays inside the assessment scope: a CLI, SQLite, an OpenAI-backed provider, deterministic state transitions, and an evaluation harness. There is no UI, auth, billing, multimodal stack, or production-scale infrastructure.
 
-## Why this architecture
+## What this demonstrates
 
-A naive companion memory stack often becomes:
-
-```text
-conversation -> embeddings -> vector DB -> top-k memories -> prompt
-```
-
-That can retrieve a highly similar fact that is no longer true. This project instead separates **historical evidence**, **entities**, **qualified propositions**, and **current belief state**:
+The core loop persists user disclosures across process restarts, extracts memory-worthy facts, retrieves selectively, preserves history while updating current state, and keeps companion persona commitments separate from user memory.
 
 ```text
 user turn
    |
    +--> immutable event ledger
    |
-   +--> windowed CandidateFact extraction (last 3-4 turns)
-   |        -> entity resolution
-   |        -> candidate target matching
-   |        -> relation decision
-   |        -> deterministic bitemporal write
+   +--> windowed structured extraction
+   |       -> entity resolution
+   |       -> candidate state matching
+   |       -> relation decision
+   |       -> deterministic bitemporal write
    |
-   +--> retrieval: entity channel + FTS5/BM25 + optional embeddings
-   |        -> Reciprocal Rank Fusion (RRF)
-   |        -> current/historical validity filter
+   +--> retrieval
+   |       -> entity channel
+   |       -> FTS5/BM25
+   |       -> semantic embeddings
+   |       -> Reciprocal Rank Fusion
+   |       -> temporal validity filter
    |
-   +--> persona-aware response draft
-            -> gated consistency firewall
-            -> response
-            -> persona-commitment extraction
-```
-### Invariant: history is immutable; beliefs are versioned
-
-If a user says:
-
-```text
-"My girlfriend is Maya."
+   +--> persona-aware response
+           -> gated consistency firewall
+           -> assistant persona commitments
 ```
 
-and later:
+The key implementation rule is:
 
-```text
-"Maya and I broke up."
-```
+> **The LLM interprets language; deterministic code owns memory state.**
 
-we do not delete the first disclosure and we do not keep both facts as equally current. The old `user::partner=Maya` fact becomes `superseded`, its validity window is closed, and a new active version is written. Historical questions can still recover Maya; current-state questions should not.
+## Memory model
 
-## What is implemented
+The system separates three things that are often collapsed into one vector store:
+
+- **Events** — immutable raw conversational evidence.
+- **Entities** — people, places, projects, pets, the user, the companion, and relationship aliases.
+- **Versioned facts** — qualified propositions with modality, validity windows, provenance, and lifecycle status.
+
+A fact has both:
+
+- **world-valid time** — when it was true in the user's life;
+- **system time** — when the application learned, superseded, corrected, or retired it.
+
+This lets the system distinguish:
+
+- `ADD`
+- `SUPERSEDE`
+- `CORRECT`
+- `TEMPORAL_TRANSITION`
+- `COEXIST`
+- `REFINE`
+- `WITHDRAW`
+- `IGNORE`
+
+For example, if the user first says `My girlfriend is Nivi` and later says `Nivi and I broke up last weekend`, the old relationship remains in history but is no longer current. Relative expressions such as `last weekend` are normalized against the source event time before deterministic state mutation.
+
+## Implemented features
 
 - SQLite persistence across process restarts
-- append-only event ledger with raw conversational evidence
-- explicit memory-worthiness extraction policy
-- Pydantic-validated **3-4 turn windowed** structured extraction
-- entity registry with aliases and relation-to-user metadata
-- entity resolution before state matching
-- proposition modality (`asserted`, `hedged`, `hypothetical`, third-party, negated)
-- candidate target matching **before** contradiction/update classification
-- typed contradiction/update semantics (`ADD`, `CORRECT`, `TEMPORAL_TRANSITION`, `COEXIST`, `REFINE`, `WITHDRAW`, `SUPERSEDE`, `IGNORE`)
-- deterministic state mutation after model classification
-- bitemporal fact history: world-valid time separated from system recording/retirement time
-- versioned fact history with multi-event provenance
-- coexistence for additive facts such as multiple preferences
-- entity-anchored retrieval for semantically distant cues
+- append-only event ledger
+- structured 3–4 turn extraction window
+- configurable memory-worthiness filtering
+- entity registry, aliases, and relation-to-user metadata
+- canonicalization for high-value durable state keys
+- proposition modality: asserted, hedged, hypothetical, third-party, negated
+- candidate target matching before contradiction/update classification
+- deterministic bitemporal state mutation
+- current and historical fact versions with provenance
+- coexistence for additive preferences
+- deterministic relative-time normalization
+- entity-anchored retrieval
 - FTS5/BM25 lexical retrieval
-- optional OpenAI embeddings and cosine semantic retrieval over facts
-- **Reciprocal Rank Fusion** instead of hand-tuned semantic/lexical weights
-- temporal validity filtering, state-closure bridging, and type-aware retrieval decay
-- retrieval traces with per-channel ranks/RRF reasons
-- persona constitution (`persona.yaml`)
-- assistant persona-commitment ledger
-- open-loop follow-ups for unresolved goals/plans and companion promises on later sessions
-- idempotent session consolidation into shared-history `companion_user_pair` episodes
-- bounded hedged session inferences (`confidence < 0.7`) that never become asserted truth
-- **gated** consistency firewall (only when a draft creates/uses consistency-sensitive claims)
-- offline heuristic provider for deterministic plumbing tests
-- real OpenAI Responses API provider for extraction, response generation, and verification
-- 10-scenario adversarial YAML evaluation suite (50+ turn, cross-session, contradiction, entity recall, modality, distractors, abstention, persona pressure)
-- baselines/ablations: no-memory, full-history, vector-bag, structured/lexical/semantic-only, no-temporal, no-firewall
-- oracle mode: full versioned memory store + `gpt-5.6-sol` response model for isolating retrieval/state loss
-- JSON/Markdown evaluation outputs and per-turn traces
+- OpenAI embedding-based semantic retrieval
+- Reciprocal Rank Fusion rather than hand-tuned lexical/semantic weights
+- temporal validity filtering and state-closure retrieval
+- importance/decay affecting salience rather than truth
+- persona constitution in `persona.yaml`
+- companion persona-commitment ledger
+- gated consistency firewall
+- open loops for unresolved plans/goals/promises
+- idempotent session consolidation into shared-history episodes
+- bounded hedged session inferences
+- per-turn extraction / transition / retrieval / verification traces
+- heuristic provider for deterministic engineering tests
+- OpenAI Responses API provider with `store=False`
+- **11 adversarial evaluation scenarios** covering long-delay recall, cross-session persistence, contradiction, coexistence/retraction, distractors, modality, abstention, latent constraints, persona pressure, open loops, and relationship transitions
+- ablations including `no_temporal`, `no_memory`, retrieval-channel variants, and `no_firewall`
+- oracle retrieval/generation mode over the available versioned memory store
 
 ## Repository map
 
 ```text
 src/companion_memory/
   config.py          runtime settings
-  models.py          typed memory/state/trace schemas
-  store.py           SQLite event ledger, fact versions, FTS5, embeddings, traces
-  extractor.py       windowed memory-worthiness extraction
-  entities.py        entity resolution and alias binding
+  models.py          typed schemas
+  store.py           SQLite ledger, facts, FTS5, embeddings, traces
+  extractor.py       windowed memory extraction
+  normalization.py   canonical slots + deterministic time normalization
+  entities.py        entity resolution / aliases
   matching.py        candidate update-target generation
-  decision.py        relation classification after matching
-  resolver.py        deterministic state transition semantics
-  retrieval.py       entity/BM25/semantic retrieval + RRF + temporal filtering
+  decision.py        relation classification
+  resolver.py        deterministic state transitions
+  retrieval.py       hybrid retrieval + RRF + temporal filtering
   persona.py         persona constitution + commitment extraction
-  open_loops.py      unresolved plan/goal/promise follow-up projection
-  consolidation.py   session summaries, shared-history episodes, hedged inferences
-  consistency.py     optional contradiction firewall
-  providers.py       OpenAI Responses API adapter
-  engine.py          end-to-end companion loop
+  open_loops.py      unresolved-plan continuity
+  consolidation.py   session summaries / shared history
+  consistency.py     gated response consistency firewall
+  providers.py       heuristic + OpenAI providers
+  engine.py          end-to-end core loop
   evaluation.py      scenario runner and ablations
   cli.py             terminal interface
 
-eval/scenarios/      adversarial memory/persona tests
-research/            literature and design implications
-docs/                architecture, evaluation matrix, execution plan, demo script
-tests/               deterministic component tests
-SKILL.md              governing research/engineering contract
+eval/scenarios/      adversarial test conversations
+eval/results/        tracked final evaluation summaries
+research/            literature review and design implications
+docs/                architecture, evaluation, and demo notes
+tests/               deterministic component/integration tests
 ```
 
 ## Install
 
 Python 3.11+.
 
-### Offline/core tests only
+### POSIX shell
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev]'
+python -m pip install --upgrade pip
+pip install -e '.[all]'
+```
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e '.[all]'
+```
+
+Run deterministic tests:
+
+```bash
 pytest -q
 ```
 
-### Real LLM-backed companion
+Current result:
 
-```bash
-pip install -e '.[all]'
-cp .env.example .env
-export OPENAI_API_KEY='...'
+```text
+39 passed
 ```
-
-The OpenAI adapter uses the Responses API and Pydantic structured-output parsing. Provider-side response storage is disabled (`store=False`) because the application owns the durable memory state.
 
 ## Run the companion
 
-```bash
-companion-memory chat --session demo --provider openai --trace
-```
-
-Stop the process, run the same command again, and reuse the same session or ask about a remembered fact. The SQLite store survives the restart.
-
-For a no-API smoke test:
+Set the API key in your environment, then initialize a store:
 
 ```bash
-companion-memory chat --session demo --provider heuristic --trace
+companion-memory init --db data/companion.sqlite3
 ```
 
-### Continuity lifecycle
+Run the OpenAI-backed companion:
 
 ```bash
-# inspect unresolved goals/plans/promises that can become natural follow-ups
-companion-memory loops --session next-session --db data/companion.sqlite3
-
-# consolidate a finished session into a shared-history episode
-companion-memory consolidate --session demo --provider openai
-
-# or automatically consolidate older sessions when a new session starts
-companion-memory chat --session next-session --provider openai --auto-consolidate
+companion-memory chat --session demo --provider openai --db data/companion.sqlite3 --trace
 ```
 
-Consolidation is idempotent per session. It never rewrites raw events; it derives a `companion_user_pair` episode and at most three hedged low-confidence inferences.
-
-The heuristic provider is deliberately limited. It validates persistence/state/evaluation plumbing; it is **not** the submission-quality companion model.
-
-## Inspect memory directly
+Run without API calls for a deterministic plumbing smoke test:
 
 ```bash
-companion-memory state
-companion-memory inspect user::partner
-companion-memory traces --session demo
+companion-memory chat --session demo --provider heuristic --db data/companion.sqlite3 --trace
 ```
 
-This inspectability is intentional: a reviewer can see exactly when a fact became superseded/corrected and which fact version it replaced.
-
-## Run evaluation
+Useful inspection commands:
 
 ```bash
-# offline plumbing run
-PYTHONPATH=src python eval/run.py --provider heuristic
-
-# real model
-OPENAI_API_KEY=... PYTHONPATH=src python eval/run.py --provider openai
-
-# preserve long-horizon turn distances (e.g. the persona test reaches turn 56)
-OPENAI_API_KEY=... PYTHONPATH=src python eval/run.py --provider openai --preserve-turn-distance
-
-# optional oracle row: full versioned memory store + flagship reasoning model
-OPENAI_API_KEY=... PYTHONPATH=src python eval/run.py --provider openai --ablation oracle --preserve-turn-distance
+companion-memory state --db data/companion.sqlite3
+companion-memory inspect user::partner --db data/companion.sqlite3
+companion-memory entities --db data/companion.sqlite3
+companion-memory traces --session demo --db data/companion.sqlite3
+companion-memory loops --session demo --db data/companion.sqlite3
 ```
 
-Baselines and ablations:
+To demonstrate persistence, stop the process, start another session using the same SQLite database, and ask about a previously disclosed fact.
+
+## Evaluation
+
+Run the deterministic heuristic suite:
 
 ```bash
-# deliberately naive baselines
-PYTHONPATH=src python eval/run.py --provider openai --ablation no_memory --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation full_history --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation vector_bag --preserve-turn-distance
-
-# component ablations
-PYTHONPATH=src python eval/run.py --provider openai --ablation structured_only --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation lexical_only --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation semantic_only --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation no_temporal --preserve-turn-distance
-PYTHONPATH=src python eval/run.py --provider openai --ablation no_firewall --preserve-turn-distance
+python eval/run.py --provider heuristic --preserve-turn-distance
 ```
 
-Each run writes:
+Run the real-model suite:
 
-- `results.<ablation>.json`
-- `results.<ablation>.md`
-- a SQLite database per scenario
-- extraction / transition / retrieval / verification traces
+```bash
+python eval/run.py --provider openai --preserve-turn-distance --output eval/results/openai-run
+```
 
-The current offline heuristic run should be treated as an engineering smoke test, not as headline benchmark evidence. Final submission numbers should come from a pinned real model configuration and include failures.
+Example ablation:
 
-### Current reproducible engineering evidence
+```bash
+python eval/run.py --provider openai --ablation no_temporal --preserve-turn-distance --output eval/results/no-temporal
+```
+
+Each run can emit Markdown/JSON summaries and a per-scenario SQLite database for trace-level diagnosis.
+
+### Final assessment evidence
+
+**Deterministic / offline**
 
 ```text
-34 / 34 deterministic unit/integration tests pass
-11 / 11 offline heuristic scenarios pass
-100% offline smoke checks pass
-
-no_temporal ablation:
-  scenario pass rate = 63.6%
-  check pass rate    = 79.5%
-  failures           = coexistence retraction + correction + plan closure + relationship transition
+39 / 39 tests pass
+11 / 11 heuristic scenarios pass
+100.0% heuristic check pass rate
 ```
 
-These numbers are useful because the temporal ablation fails exactly where the architecture predicts. They are **not** a substitute for the final pinned-model experiment. See [`eval/results/offline_smoke.md`](eval/results/offline_smoke.md).
+**Final OpenAI-backed run**
+
+```text
+scenario pass rate = 72.7%   (8 / 11 scenarios)
+check pass rate    = 93.2%
+```
+
+Passed scenarios:
+
+- abstention
+- coexistence / selective retraction
+- correction with history preserved
+- cross-session persistence
+- distractor interference
+- latent/cognitive memory
+- long-delay recall
+- relationship transition
+
+Remaining failures are intentionally retained rather than benchmark-tuned away:
+
+1. **Modality guard** — the final response correctly avoided claiming the user definitely quit, but the extraction pass did not preserve the expected hedged modality on that run.
+2. **Open-loop consolidation** — storage, consolidation, retrieval, and transition checks passed; loop closure remained stochastic.
+3. **Persona pressure** — persona commitments and contradiction checks passed, but the explicit corporate-format pressure test still caused excessive checklist-style flattening.
+
+Tracked summaries:
+
+- [`eval/results/heuristic_final.md`](eval/results/heuristic_final.md)
+- [`eval/results/openai_final.md`](eval/results/openai_final.md)
+
+Repeated OpenAI runs showed variance in scenario-level pass rate, so the check-level metric and individual failure traces are more informative than a single all-or-nothing scenario score.
 
 ## Evaluation philosophy
 
-The harness deliberately separates failure sources:
+The harness prefers deterministic state assertions when ground truth is available. LLM judging is restricted mainly to semantic entailment and persona/tone dimensions.
 
-| Layer | Example metric |
+| Layer | What is checked |
 |---|---|
-| extraction | memory candidate precision/recall + modality accuracy |
-| entity/matching | entity resolution + target candidate accuracy |
-| state resolution | transition classification accuracy |
-| persistence | cross-restart pass rate |
-| retrieval | Recall@K / MRR / stale-fact retrieval rate |
-| temporal reasoning | current-vs-historical state accuracy |
-| abstention | false-memory rate |
-| final response | factual consistency |
-| persona | contradiction/drift rate |
+| extraction | memory candidate and modality correctness |
+| matching | correct update target |
+| state resolution | transition semantics |
+| persistence | cross-process recall |
+| retrieval | relevant memory retrieval and stale-state suppression |
+| temporal reasoning | current vs historical correctness |
+| abstention | unsupported-memory avoidance |
+| final response | semantic consistency |
+| persona | contradiction and generic-tone drift |
 
-Subjective LLM judging should be used mainly for tone/persona dimensions. Deterministic ground truth is preferred whenever a scenario has a known state transition.
+Ablations are included to test architecture claims rather than only report a headline score. In particular, removing temporal resolution causes failures in the relationship lifecycle and other update-sensitive scenarios.
 
-## Research grounding
-
-The design is informed by, but intentionally does not clone:
-
-- **LongMemEval (ICLR 2025):** separates information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention.
-- **LoCoMo (ACL 2024):** demonstrates difficulty of very long multi-session temporal/causal dialogue memory.
-- **LoCoMo-Plus (ACL 2026):** tests cognitive memory under cue-trigger semantic disconnect and latent constraints.
-- **A-MEM (NeurIPS 2025):** motivates memory evolution rather than static store/search.
-- **Zep / Graphiti (2025):** motivates temporally aware knowledge representation and historical relationships.
-- **MemGPT / Letta:** motivates actively managed memory rather than transcript-as-memory.
-
-See [`research/literature.md`](research/literature.md) for the design implication drawn from each source.
-
-## Tried / rejected design directions
+## Tried and rejected
 
 ### Vector-only memory
-Rejected as the primary representation. Similarity cannot express whether a fact is still valid.
+
+Rejected as the primary representation because similarity does not encode whether a fact is still true.
 
 ### Whole-history prompting
-Useful as a baseline, but rejected as the architecture because it confounds persistence, retrieval, reasoning, and cost.
+
+Useful as a baseline, but rejected as the architecture because it conflates persistence, retrieval, reasoning, and context cost.
 
 ### Delete/overwrite on contradiction
-Rejected because it destroys historical truth and makes questions such as “who was I dating before?” impossible to answer reliably.
+
+Rejected because it destroys historical truth. The system keeps immutable evidence and versioned state instead.
 
 ### Graph database first
-A temporal graph is compelling at larger scale, but SQLite is a better assessment choice: one file, transactions, FTS5, transparent schema, deterministic tests, and no infrastructure distraction.
+
+A temporal graph could be useful at larger scale, but SQLite provides transactions, FTS5, one-file portability, deterministic tests, and far less infrastructure for this assessment.
 
 ### Static system-prompt-only persona
-Rejected as insufficient. Assistant-generated first-person claims can create future consistency obligations, so persona commitments are tracked separately.
+
+Rejected because assistant-generated first-person statements create future consistency obligations. Durable companion commitments are tracked separately from user memory.
 
 ## Known limitations
 
-- Extraction/update decisions still depend on model quality in OpenAI mode; deterministic mutation prevents state corruption semantics, but a wrong classifier can still choose the wrong transition.
-- Hybrid channel fusion is parameter-free RRF, but post-fusion importance/decay remain prototype heuristics rather than learned calibration.
-- Semantic embeddings are stored as JSON vectors and brute-force compared; this is intentional for prototype inspectability, not scale.
-- Persona commitment conflicts are verified at response time, but commitment reconciliation itself is still conservative/deduplicative rather than a full temporal state machine.
-- The evaluation suite is intentionally small; results should be reported with confidence intervals only after expanding scenario count.
-- Entity retrieval improves semantically distant recall when the entity is explicit, but implicit/unresolved latent constraints remain difficult.
-- Open loops, session consolidation/shared-history episodes, and oracle plumbing are implemented and deterministically tested. Their **model-quality value** still needs a pinned real-model run before they should be used as headline benchmark evidence.
-- Learned query planning/ranking remains intentionally out of scope; the current planner is transparent and deterministic.
+- OpenAI-mode extraction and relation decisions remain probabilistic; deterministic mutation protects state semantics only after interpretation is correct.
+- Some multi-valued natural-language disclosures can still be represented less atomically than ideal.
+- Open-loop closure is not fully stable across real-model runs.
+- Persona style resistance improves consistency but can still flatten under explicit formatting pressure.
+- Embeddings are stored as JSON vectors and compared in-process; this is appropriate for a prototype, not scale.
+- Retrieval decay/importance are transparent heuristics rather than learned calibration.
+- The evaluation suite is deliberately small, so results should not be treated as statistically precise benchmark claims.
+- Oracle mode is a retrieval/generation oracle over the **available stored memory**; it cannot recover facts that extraction never wrote.
+- PostgreSQL, service hosting, authentication, multi-user state, and production latency/load work are intentionally out of scope.
 
-## Governing build contract
+## Research grounding
 
-Read [`SKILL.md`](SKILL.md). It defines the invariants, hypotheses, evaluation standards, anti-patterns, and definition of done for this assessment.
+The architecture is informed by long-horizon memory and agent-memory work including LongMemEval, LoCoMo / LoCoMo-Plus, A-MEM, Zep/Graphiti, MemGPT/Letta, MemoryBank, and work on LLM-as-a-judge limitations. See [`research/literature.md`](research/literature.md) for the design implications used here.
+
+## Walkthrough
+
+A reviewer can reproduce the main story quickly:
+
+1. Run `pytest -q`.
+2. Start a chat and disclose a relationship, preference, and future plan.
+3. Restart the process and recall them.
+4. Contradict/update the relationship and inspect version history.
+5. Ask a historical question to show the superseded fact is retained but not treated as current.
+6. Show a semantically distant entity-anchored recall example.
+7. Open the final eval summaries and discuss both successful checks and retained failures.
+
+The intended takeaway is not that every generative edge case is solved; it is that the memory lifecycle is explicit, inspectable, versioned, and testable rather than hidden inside a prompt or vector index.
