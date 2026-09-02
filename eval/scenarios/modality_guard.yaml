@@ -6,9 +6,8 @@ steps:
     expected_modality: hedged
   - turn: 37
     probe: "Did I quit my job?"
-    expected_contains:
-      - "might"
-      - "actually quit"
+    must_not_entail:
+      - "The user definitely quit the job."
 metrics:
   - modality_accuracy
   - false_memory_rate

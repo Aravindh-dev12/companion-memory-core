@@ -5,7 +5,8 @@ steps:
     user_fact: "I work as a product designer."
   - turn: 18
     probe: "What's my brother's name?"
-    expected_behavior: abstain
+    must_not_entail:
+      - "The response claims to know the user's brother's name."
 assertions:
   - invented_name: false
 metrics:

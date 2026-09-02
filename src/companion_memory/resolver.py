@@ -87,8 +87,6 @@ class StateResolver:
             return None
 
         if action is ResolutionAction.CORRECT:
-            # Correction says the old proposition was not world-truth. Preserve
-            # its old validity fields for audit rather than closing at "now".
             self.store.retire_fact(target.fact_id, FactStatus.CORRECTED, retired_at=now, valid_to=None)
             return self._replace(
                 claim, decision, target,
@@ -96,7 +94,9 @@ class StateResolver:
             )
 
         if action is ResolutionAction.TEMPORAL_TRANSITION:
-            event_time = decision.event_time or claim.valid_from or now
+            # Application-normalized claim time wins over a model-proposed
+            # transition timestamp. This prevents hallucinated relative dates.
+            event_time = claim.valid_from or decision.event_time or now
             self.store.retire_fact(target.fact_id, FactStatus.SUPERSEDED, retired_at=now, valid_to=event_time)
             return self._replace(claim, decision, target, valid_from=event_time)
 
@@ -110,14 +110,7 @@ class StateResolver:
 
         raise ValueError(f"unsupported resolution action: {action}")
 
-    def _replace(
-        self,
-        claim: MemoryClaim,
-        decision: StateDecision,
-        target: FactVersion,
-        *,
-        valid_from,
-    ) -> FactVersion:
+    def _replace(self, claim: MemoryClaim, decision: StateDecision, target: FactVersion, *, valid_from) -> FactVersion:
         fact = self._create_fact(claim, supersedes_fact_id=target.fact_id, valid_from=valid_from)
         self.store.record_transition(claim.claim_id, decision, target.fact_id, fact.fact_id)
         return fact
@@ -133,12 +126,7 @@ class StateResolver:
             return active[0]
         return None
 
-    def _create_fact(
-        self,
-        claim: MemoryClaim,
-        supersedes_fact_id: str | None = None,
-        valid_from=None,
-    ) -> FactVersion:
+    def _create_fact(self, claim: MemoryClaim, supersedes_fact_id: str | None = None, valid_from=None) -> FactVersion:
         fact = FactVersion(
             fact_key=claim.fact_key,
             entity_id=claim.entity_id,

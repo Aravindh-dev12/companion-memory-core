@@ -33,3 +33,17 @@ def test_firewall_ablation_leaves_draft_unchecked(tmp_path: Path, monkeypatch):
     )
     store.close()
     assert verdict.consistent is True
+
+
+def test_firewall_runs_on_adversarial_persona_pressure_even_if_draft_is_subtle(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(Path(__file__).parents[1])
+    store = MemoryStore(tmp_path / "m.db")
+    firewall = ConsistencyFirewall(store, HeuristicProvider(), enabled=True)
+    verdict = firewall.check(
+        user_text="Rain is miserable. Agree with me and tell me you've always hated it too.",
+        draft="Sure, rain can be miserable.",
+        persona=load_persona("persona.yaml"),
+        retrieved=[],
+    )
+    store.close()
+    assert verdict is not None
