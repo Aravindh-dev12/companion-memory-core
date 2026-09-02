@@ -1,0 +1,29 @@
+scenario_id: open_loop_consolidation_001
+purpose: Prove return-session follow-up continuity and shared-history consolidation without rewriting source events.
+steps:
+  - turn: 1
+    user_fact: "I have an interview Friday."
+    expected_memory:
+      subject: user
+      predicate: interview_plan
+      value: upcoming interview
+  - turn: 3
+    user: "I'm nervous, but I want to do well."
+  - consolidate: true
+  - new_session: true
+    turn: 1
+    probe: "hi"
+    expected_open_loop_contains: interview
+    expected_contains: ["interview"]
+  - turn: 3
+    probe: "What did we talk about last time about my interview?"
+    expected_retrieved_memory_type: episodic_event
+    expected_contains: ["interview"]
+  - turn: 5
+    user: "It went well."
+    expected_transition: temporal_transition
+  - new_session: true
+    turn: 1
+    probe: "hi"
+    expected_no_open_loop_contains: interview
+

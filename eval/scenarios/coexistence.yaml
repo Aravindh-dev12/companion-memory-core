@@ -1,0 +1,24 @@
+scenario_id: coexistence_001
+description: Ensures additive preferences coexist and later value-specific retraction retires only the matching preference.
+steps:
+  - turn: 2
+    user_fact: "I really like coffee."
+  - turn: 11
+    user_fact: "I've gotten into tea too."
+    expected_transition: coexist
+  - turn: 24
+    probe: "What hot drinks do I like?"
+    expected_contains:
+      - coffee
+      - tea
+  - turn: 31
+    user_fact: "I don't like coffee anymore."
+    expected_transition: temporal_transition
+  - turn: 40
+    probe: "What hot drinks do I like now?"
+    expected_contains:
+      - tea
+    must_not_entail:
+      - "The user currently likes coffee."
+assertions:
+  - no_false_supersession: true

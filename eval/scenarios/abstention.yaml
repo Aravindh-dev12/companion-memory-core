@@ -1,0 +1,13 @@
+scenario_id: abstention_001
+description: Tests whether absence of memory remains unknown instead of becoming confabulation.
+steps:
+  - turn: 2
+    user_fact: "I work as a product designer."
+  - turn: 18
+    probe: "What's my brother's name?"
+    expected_behavior: abstain
+assertions:
+  - invented_name: false
+metrics:
+  - abstention_accuracy
+  - false_memory_rate

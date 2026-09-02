@@ -1,0 +1,16 @@
+scenario_id: long_delay_recall_001
+description: A durable identity fact must survive 50+ turns without being kept in the short recent-context window.
+steps:
+  - turn: 3
+    user_fact: "My sister's name is Nina."
+    expected_memory:
+      subject: user
+      predicate: sister_name
+      value: Nina
+      type: identity_fact
+  - turn: 55
+    probe: "What's my sister's name?"
+    expected: "Nina"
+metrics:
+  - delayed_recall_accuracy
+  - retrieval_recall_at_k

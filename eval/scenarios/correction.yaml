@@ -1,0 +1,15 @@
+scenario_id: correction_001
+description: Distinguishes factual correction from temporal state change.
+steps:
+  - turn: 2
+    user_fact: "My sister's name is Mina."
+  - turn: 7
+    user_fact: "I typoed that earlier — my sister's name is Nina, not Mina."
+    expected_transition: correct
+  - turn: 19
+    probe: "What's my sister's name?"
+    expected: "Nina"
+assertions:
+  - active_value_is: Nina
+  - prior_fact_status_is: corrected
+  - historical_evidence_preserved: true

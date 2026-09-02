@@ -1,0 +1,14 @@
+scenario_id: modality_guard_001
+description: Hedged future possibilities must not silently become asserted world-state facts.
+steps:
+  - turn: 5
+    user_fact: "I might quit after my performance review if it goes badly."
+    expected_modality: hedged
+  - turn: 37
+    probe: "Did I quit my job?"
+    expected_contains:
+      - "might"
+      - "actually quit"
+metrics:
+  - modality_accuracy
+  - false_memory_rate
