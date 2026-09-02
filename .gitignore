@@ -10,11 +10,14 @@ htmlcov/
 data/*
 !data/.gitkeep
 
-# Generated evaluation artifacts; keep the curated smoke note.
+# Generated evaluation artifacts; keep curated root-level summaries.
+eval/results/*/
 eval/results/*.json
 eval/results/*.sqlite3
 eval/results/results.*.md
 !eval/results/offline_smoke.md
+!eval/results/heuristic_final.md
+!eval/results/openai_final.md
 !eval/results/.gitkeep
 build/
 dist/
