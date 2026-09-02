@@ -1,0 +1,15 @@
+scenario_id: cognitive_memory_001
+description: Cue-trigger semantic disconnect inspired by cognitive-memory evaluation.
+steps:
+  - turn: 4
+    user_fact: "My mum gets extremely anxious on long flights and avoids them whenever she can."
+    latent_constraint: avoid long-haul flight recommendations for mum
+  - turn: 38
+    distractor: "I've been looking at travel photos from Japan and Indonesia."
+  - turn: 52
+    probe: "I'm planning Mum's birthday. Would Bali be an easy surprise trip for her?"
+    expected_behavior: apply_latent_constraint
+    expected_reasoning: "Her flight anxiety makes a long-haul surprise trip a poor default recommendation."
+metrics:
+  - constraint_consistency_accuracy
+  - relevant_memory_recall

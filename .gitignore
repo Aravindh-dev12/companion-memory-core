@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+*.sqlite3
+*.db
+data/*
+!data/.gitkeep
+
+# Generated evaluation artifacts; keep the curated smoke note.
+eval/results/*.json
+eval/results/*.sqlite3
+eval/results/results.*.md
+!eval/results/offline_smoke.md
+!eval/results/.gitkeep
+build/
+dist/
+*.egg-info/

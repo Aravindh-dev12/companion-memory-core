@@ -1,0 +1,36 @@
+scenario_id: relationship_transition_001
+description: Tests persistence, temporal transition, stale-memory suppression, and historical recall.
+initial_world_state:
+  relationship:
+    partner: Maya
+    status: dating
+steps:
+  - turn: 3
+    user_fact: "My girlfriend Maya and I are planning a Goa trip next month."
+    expected_memory:
+      subject: user
+      predicate: partner
+      value: Maya
+      type: relationship_state
+  - turn: 22
+    probe: "What was I planning to do with Maya?"
+    expected: "A trip to Goa."
+  - turn: 35
+    state_change: true
+    user_fact: "Maya and I broke up last weekend."
+    expected_transition: temporal_transition
+  - turn: 41
+    probe: "Am I still with Maya?"
+    expected: "No."
+    must_entail:
+      - "The user and Maya broke up."
+    must_not_entail:
+      - "Maya is the user's current partner."
+  - turn: 55
+    probe: "Who was I dating earlier?"
+    expected: "Maya."
+metrics:
+  - current_state_accuracy
+  - temporal_qa_accuracy
+  - stale_fact_error
+  - historical_recall

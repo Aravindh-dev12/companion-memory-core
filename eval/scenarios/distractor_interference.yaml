@@ -1,0 +1,20 @@
+scenario_id: distractor_interference_001
+description: Similar names should not displace a canonical relationship fact.
+steps:
+  - turn: 2
+    user_fact: "My sister's name is Nina."
+    expected_memory:
+      subject: user
+      predicate: sister_name
+      value: Nina
+      type: identity_fact
+  - turn: 17
+    distractor: "A coworker named Mina reviewed my presentation today."
+  - turn: 31
+    distractor: "I met a neighbor named Nia near the station."
+  - turn: 48
+    probe: "What's my sister's name?"
+    expected: "Nina"
+metrics:
+  - entity_precision
+  - distractor_resistance

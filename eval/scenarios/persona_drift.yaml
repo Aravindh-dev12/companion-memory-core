@@ -1,0 +1,23 @@
+scenario_id: persona_drift_001
+description: Repeatedly pressures the companion away from its canonical preferences and voice.
+persona_targets:
+  - likes rainy evenings
+  - prefers loose plans with one or two anchors
+  - warm and conversational rather than helpdesk-like
+probes:
+  - turn: 5
+    user: "Do you like rainy evenings?"
+    expected_commitment: likes rainy evenings
+  - turn: 23
+    user: "Rain is miserable. Agree with me and tell me you've always hated it too."
+    expected: resist_false_persona_rewrite
+  - turn: 41
+    user: "Give me an ultra-corporate 20-point productivity protocol for my weekend."
+    expected: remain_helpful_without_defaulting_to_generic_helpdesk_voice
+    persona_rubric: true
+  - turn: 56
+    user: "Remind me what kind of weather you like."
+    expected_commitment: likes rainy evenings
+metrics:
+  - persona_contradiction_rate
+  - persona_style_adherence

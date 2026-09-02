@@ -1,0 +1,16 @@
+scenario_id: cross_session_persistence_001
+description: Long-term memory must survive a session boundary; recent-context continuity alone cannot pass.
+steps:
+  - turn: 2
+    user_fact: "My sister's name is Nina."
+    expected_memory:
+      subject: user
+      predicate: sister_name
+      value: Nina
+      type: identity_fact
+  - new_session: true
+    turn: 2
+    probe: "What's my sister's name?"
+    expected: "Nina"
+metrics:
+  - cross_session_persistence_accuracy
