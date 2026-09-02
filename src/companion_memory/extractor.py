@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .models import Event, MemoryCandidate, MemoryClaim, MemoryExtraction, Speaker
+from .normalization import canonicalize_candidate, resolve_relative_event_time
 from .store import MemoryStore
 
 
@@ -29,6 +30,7 @@ class MemoryExtractor:
             if not candidate.memory_worthy or candidate.importance < self.worthiness_threshold:
                 continue
             source = self._source_event(events, candidate) or event
+            candidate = canonicalize_candidate(candidate, source.text)
             claim = self._to_claim(source, events, candidate)
             if self.store and self.store.claim_exists_for_event_value(source.event_id, claim.fact_key, claim.value_text):
                 continue
@@ -47,6 +49,13 @@ class MemoryExtractor:
 
     @staticmethod
     def _to_claim(source: Event, window: list[Event], candidate: MemoryCandidate) -> MemoryClaim:
+        relative_text = " ".join(part for part in [candidate.event_time_text, source.text] if part)
+        resolved_time, resolved_precision = resolve_relative_event_time(relative_text, source.event_time)
+        # Relative phrases are normalized deterministically against the source
+        # event timestamp. For non-relative/unknown text, preserve the model's
+        # explicit normalized time when present.
+        valid_from = resolved_time if resolved_time is not None else candidate.valid_from
+        precision = resolved_precision or candidate.event_time_precision
         return MemoryClaim(
             source_event_id=source.event_id,
             source_event_ids=[e.event_id for e in window],
@@ -61,10 +70,10 @@ class MemoryExtractor:
             polarity=candidate.polarity,
             confidence=candidate.confidence,
             importance=candidate.importance,
-            valid_from=candidate.valid_from,
+            valid_from=valid_from,
             valid_to=candidate.valid_to,
             event_time_text=candidate.event_time_text,
-            event_time_precision=candidate.event_time_precision,
+            event_time_precision=precision,
             expires_at=candidate.expires_at,
             evidence_text=candidate.evidence_text.strip() or source.text,
         )
